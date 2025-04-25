@@ -4,6 +4,8 @@ import numpy as np
 import cv2
 from glob import glob
 import torch
+import json
+import re
 
 from torch.utils.data import Dataset
 from utils import hwc_to_chw, reverse_normalize, normalize
@@ -128,12 +130,28 @@ class Dataset2ValidPref(Dataset):
 		self.num_style = len(self.style_dirs)
 
 		self.img_names = []
+
+		# start_idx 现在表示 group_id
+		group_id = start_idx
+
+		with open(args.reference_split, 'r') as f:
+			self.reference_split = json.load(f) 
+
 		for i, style_dir in enumerate(self.style_dirs):
-			img_names_i = sorted(os.listdir(self.style_dirs[i]))
-			if num_pref_images*(start_idx+1) <= len(img_names_i):
-				self.img_names.append(img_names_i[num_pref_images*start_idx:num_pref_images*(start_idx+1)])
-			else:
-				self.img_names = random.choices(img_names_i, k=num_pref_images)
+			# img_names_i = sorted(os.listdir(self.style_dirs[i]))
+			# # 每次迭代选择不同的 reference image，超出范围则随机选择
+			# if num_pref_images*(start_idx+1) <= len(img_names_i):
+			# 	self.img_names.append(img_names_i[num_pref_images*start_idx:num_pref_images*(start_idx+1)])
+			# else:
+			# 	self.img_names = random.choices(img_names_i, k=num_pref_images)
+
+			# 每个 style_dir 的 reference image 是一样的
+			for j, group in enumerate([*self.reference_split]):
+				if j == group_id:
+					reference_name = [f + '.tif' for f in self.reference_split[group]]
+					self.img_names.append(reference_name)
+
+		print("reference images: ", self.img_names)
 
 		self.num_pref_images = num_pref_images
 
@@ -150,6 +168,7 @@ class Dataset2ValidPref(Dataset):
 
 		image_name = self.img_names[style_id][img_id]
 
+		# 在外部修改文件结构，不修改代码
 		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], image_name)))
 		y_256 = cv2.resize(y, (256, 256), interpolation=cv2.INTER_LINEAR)
 		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", image_name)))
@@ -159,7 +178,7 @@ class Dataset2ValidPref(Dataset):
 
 
 class Dataset2ValidUnseen(Dataset):
-	def __init__(self, sub_dir, args):
+	def __init__(self, sub_dir, args, start_idx):
 
 		self.style_dirs = []
 		for style_dir in sorted(glob(os.path.join(args.data_dir, sub_dir, '*'))):
@@ -167,15 +186,31 @@ class Dataset2ValidUnseen(Dataset):
 				self.style_dirs.append(style_dir)
 		self.style_num = len(self.style_dirs)
 
+		# start_idx 现在表示 group_id
+		group_id = start_idx
+
+		with open(args.reference_split, 'r') as f:
+			self.reference_split = json.load(f) 
+
+		# one group
+		for i, group in enumerate([*self.reference_split]):
+			if i == group_id:
+				reference_name = self.reference_split[group]
+				pattern = re.compile(rf'^{group}_\d+\.tif$')
+
 		self.img_names = []
 		self.style_img_names = []
 		for i, style_dir in enumerate(self.style_dirs):
 			self.style_img_names.append([])
 			for img_name in sorted(os.listdir(style_dir)):
 				if img_name[0] != ".":
-					self.img_names.append([i, img_name])
-					self.style_img_names[i].append(img_name)
+					# 增加判断，img_name 需要满足 group_id 的条件且不是 reference image
+					if pattern.match(img_name) and img_name[:-4] not in reference_name:
+						self.img_names.append([i, img_name])
+						self.style_img_names[i].append(img_name)
 		self.img_num = len(self.img_names)
+
+		print("test images: ", self.img_names)
 
 	def __len__(self):
 		return self.img_num
@@ -187,6 +222,7 @@ class Dataset2ValidUnseen(Dataset):
 		style_id = self.img_names[idx][0]
 		img_name = self.img_names[idx][1]
 
+		# 在外部修改文件结构，不修改代码
 		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", img_name)))
 		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], img_name)))
 
@@ -275,3 +311,91 @@ class Dataset2Train(Dataset):
 			padding_mask = np.zeros(self.num_pref+1)
 
 		return hwc_to_chw(x_256), hwc_to_chw(y_256), np.array(list(map(lambda x: hwc_to_chw(x), preferred_x_256))), np.array(list(map(lambda x: hwc_to_chw(x), preferred_y_256))), padding_mask
+
+# class Dataset2ValidPref_PPR10K_group(Dataset):
+# 	def __init__(self, args, num_pref_images, group_id):
+
+# 		self.style_dirs = [os.path.join(args.data_dir, 'source'), os.path.join(args.data_dir, 'target_a')]
+# 		self.num_style = len(self.style_dirs) - 1
+
+# 		self.img_names = []
+# 		with open(args.reference_split, 'r') as f:
+# 			self.reference_split = json.load(f) 
+
+# 		# one group
+# 		for i, group in enumerate([*self.reference_split]):
+# 			if i == group_id:
+# 				self.img_names.extend(self.reference_split[group])
+
+# 		print(self.img_names)
+# 		self.img_names = [name + '.tif' for name in self.img_names]
+# 		self.img_num = len(self.img_names) # 6
+# 		print(self.img_num)
+
+# 		self.num_pref_images = num_pref_images
+
+# 	def __len__(self):
+# 		l = self.num_pref_images * self.num_style # k * 1 for now
+# 		return l
+
+# 	def __getitem__(self, idx):
+# 		cv2.setNumThreads(0)
+# 		cv2.ocl.setUseOpenCL(False)
+
+# 		style_id = idx // self.num_pref_images
+# 		img_id = idx % self.num_pref_images
+
+# 		image_name = self.img_names[img_id]
+
+# 		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id + 1], image_name))) # target_a
+# 		y_256 = cv2.resize(y, (256, 256), interpolation=cv2.INTER_LINEAR)
+# 		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], image_name))) # source
+# 		x_256 = cv2.resize(x, (256, 256), interpolation=cv2.INTER_LINEAR)
+
+# 		return hwc_to_chw(y_256), hwc_to_chw(x_256), style_id, image_name
+	
+# class Dataset2ValidUnseen_PPR10K_group(Dataset):
+# 	def __init__(self, args, group_id):
+
+# 		self.style_dirs = [os.path.join(args.data_dir, 'source'), os.path.join(args.data_dir, 'target_a')]
+# 		self.num_style = len(self.style_dirs) - 1
+
+# 		self.img_names = []
+# 		with open(args.reference_split, 'r') as f:
+# 			self.reference_split = json.load(f) 
+
+# 		# one group
+# 		for i, group in enumerate([*self.reference_split]):
+# 			if i == group_id:
+# 				reference_name = self.reference_split[group]
+# 				pattern = re.compile(rf'^{group}_\d+\.tif$')
+# 				matched_file = [f for f in os.listdir(self.style_dirs[0]) if pattern.match(f) and f[:-4] not in reference_name]
+# 				self.img_names.extend(matched_file) # imgs for test
+
+# 		print(self.img_names)
+# 		self.img_num = len(self.img_names)
+# 		print(self.img_num)
+
+# 	def __len__(self):
+# 		return self.img_num
+
+# 	def __getitem__(self, idx):
+# 		cv2.setNumThreads(0)
+# 		cv2.ocl.setUseOpenCL(False)
+
+# 		# style_id = self.img_names[idx][0]
+# 		# img_name = self.img_names[idx][1]
+# 		style_id = idx // self.img_num
+# 		img_name = self.img_names[idx]
+
+# 		x = normalize(cv2.imread(os.path.join(self.style_dirs[0], img_name)))
+# 		y = normalize(cv2.imread(os.path.join(self.style_dirs[1], img_name)))
+
+# 		original_shape = x.shape
+
+# 		x_256 = cv2.resize(x, (256, 256), interpolation=cv2.INTER_LINEAR)
+# 		y_256 = cv2.resize(y, (256, 256), interpolation=cv2.INTER_LINEAR)
+# 		x = cv2.resize(x, (512, 512), interpolation=cv2.INTER_LINEAR)
+# 		y = cv2.resize(y, (512, 512), interpolation=cv2.INTER_LINEAR)
+
+# 		return hwc_to_chw(x), hwc_to_chw(y), hwc_to_chw(x_256), style_id, np.array(original_shape), img_name
