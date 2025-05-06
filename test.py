@@ -20,11 +20,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from metrics import calculate_psnr_pt, calculate_ssim_pt, calculate_eab_pt
 import logging
 
+groups = [
+    "grp_0_subgrp_91",
+    "grp_11_subgrp_20",
+    "grp_18_subgrp_111",
+    "grp_4_subgrp_6",
+    "grp_8_subgrp_85",
+	]
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--v_batch_size', default=10, type=int, help='mini batch size for validation')
 parser.add_argument('--num_workers', default=16, type=int, help='number of workers')
 parser.add_argument('--save_dir', default='/media/liubinnan/新加卷/checkpoint/masked_style_modeling/pretrained_models', type=str, help='path to models saving')
-parser.add_argument('--data_dir', default='/home/liubinnan/PPR10K_for_MSM', type=str, help='path to dataset')
+parser.add_argument('--data_dir', default='/home/liubinnan/test_bench_for_MSM', type=str, help='path to dataset')
 parser.add_argument('--spatial_size', default=2, type=int)
 parser.add_argument('--save_images', action='store_true')
 parser.add_argument('--reference_split', default='/home/liubinnan/code/reference_split.json', type=str)
@@ -100,7 +108,7 @@ def test(test_unseen_loader, test_preferred_loader,
 
 
 
-		for (x, y, x_256, style_id, original_shape, img_name) in tqdm(test_unseen_loader, file=sys.stdout):
+		for (x, y, x_256, style_id, original_shape, img_name, my_style_dirs) in tqdm(test_unseen_loader, file=sys.stdout):
 			x = x.cuda(non_blocking=True)
 			y = y.cuda(non_blocking=True)
 			style_id = style_id.cuda(non_blocking=True)
@@ -169,8 +177,12 @@ def test(test_unseen_loader, test_preferred_loader,
 					x_np_i = np.clip(x_np[i].transpose((1,2,0)) * 255, 0, 255).astype(np.uint8)[:,:,::-1]
 					x_np_i = cv2.resize(x_np_i, original_shape[i][:2].tolist()[::-1], interpolation=cv2.INTER_LINEAR)
 
-					output_name = "test_results/{0}/{3}/{1}/output/{2}".format(style_dirs[style_id[i].argmax().cpu()], num_pref_images, img_name[i], group_id).replace(".tif", ".jpg")
+					os.makedirs("./result_{0}/{1}/{2}".format(groups[group_id], num_pref_images, my_style_dirs[i]), exist_ok=True)
+					os.makedirs("./vis_{0}/{1}/{2}".format(groups[group_id], num_pref_images, my_style_dirs[i]), exist_ok=True)
+					output_name_ = "./result_{0}/{1}/{3}/{2}".format(groups[group_id], num_pref_images, img_name[i], my_style_dirs[i])
+					output_name = "./vis_{0}/{1}/{3}/{2}".format(groups[group_id], num_pref_images, img_name[i], my_style_dirs[i])
 					cv2.imwrite(output_name, np.hstack([x_np_i, predicted_y_np_i, y_np_i]))
+					cv2.imwrite(output_name_, predicted_y_np_i)
 
 
 	logging.info("group:{4} PSNR:{0:.3f} SSIM:{1:.3f} LPIPS:{3:.3f} DELTAab:{2:.3f}".format(np.array(list(map(lambda x: x.avg, PSNR))).mean(),
@@ -210,13 +222,20 @@ if __name__ == '__main__':
 
 	# test_dataset = Dataset2ValidUnseen('test', args)
 	# style_dirs = list(map(lambda x: os.path.basename(x), test_dataset.style_dirs))
-	style_dirs = ["ExpertA"]
-	group_num = 21
+	style_dirs = ["1", "2", "3", "4", "5"]
+	group_num = 5
+	groups = [
+    "grp_0_subgrp_91",
+    "grp_11_subgrp_20",
+    "grp_18_subgrp_111",
+    "grp_4_subgrp_6",
+    "grp_8_subgrp_85",
+	]
 
 	if not args.save_images:
-		num_pref_images_list = [1, 2, 3, 4, 5, 6]
+		num_pref_images_list = [3, 5, 10]
 	else:
-		num_pref_images_list = [1, 2, 3, 4, 5, 6]
+		num_pref_images_list = [3, 5, 10]
 
 	# PSNRresults = np.zeros((10, len(style_dirs), len(num_pref_images_list)))
 	# SSIMresults = np.zeros((10, len(style_dirs), len(num_pref_images_list)))
@@ -228,7 +247,10 @@ if __name__ == '__main__':
 
 	for k, num_pref_images in enumerate(num_pref_images_list):
 		for i in range(group_num): # 重复计算 10 次 -> 计算不同 group
+			os.makedirs("./result_{0}/{1}".format(groups[i], num_pref_images), exist_ok=True)
+			os.makedirs("./vis_{0}/{1}".format(groups[i], num_pref_images), exist_ok=True)
 			print("[Number of preferred images: {0}] {1} / {2}".format(num_pref_images, i + 1, group_num))
+			args.data_dir = os.path.join("/home/liubinnan/test_bench_for_MSM", groups[i])
 			test_ref_dataset = Dataset2ValidPref('test_ref', args, num_pref_images, start_idx=i)
 			test_preferred_loader = DataLoader(test_ref_dataset,
 		                            batch_size=args.v_batch_size,
@@ -240,11 +262,11 @@ if __name__ == '__main__':
 		                            batch_size=args.v_batch_size,
 		                            num_workers=5,
 		                            pin_memory=True)
-
-			if args.save_images:
-				for style_dir in style_dirs:
-					os.makedirs("test_results/{0}/{2}/{1}/preferred/".format(style_dir, num_pref_images, i))
-					os.makedirs("test_results/{0}/{2}/{1}/output/".format(style_dir, num_pref_images, i))
+			
+			# if args.save_images:
+			# 	for style_dir in style_dirs:
+			# 		os.makedirs("test_results/{0}/{2}/{1}/preferred/".format(style_dir, num_pref_images, i))
+			# 		os.makedirs("test_results/{0}/{2}/{1}/output/".format(style_dir, num_pref_images, i))
 
 			PSNR, SSIM, LPIPS, DELTAab = test(test_unseen_loader, test_preferred_loader,
 				transformer_encoder, masked_token, style_embedding, content_embedding, stylized_enhancer,

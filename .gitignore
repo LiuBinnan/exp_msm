@@ -1,4 +1,7 @@
 # Add by user
+*.json
+vis_*/
+result_*/
 test_results/
 .vscode/
 result/

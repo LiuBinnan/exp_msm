@@ -148,7 +148,7 @@ class Dataset2ValidPref(Dataset):
 			# 每个 style_dir 的 reference image 是一样的
 			for j, group in enumerate([*self.reference_split]):
 				if j == group_id:
-					reference_name = [f + '.tif' for f in self.reference_split[group]]
+					reference_name = self.reference_split[group]
 					self.img_names.append(reference_name)
 
 		print("reference images: ", self.img_names)
@@ -169,9 +169,9 @@ class Dataset2ValidPref(Dataset):
 		image_name = self.img_names[style_id][img_id]
 
 		# 在外部修改文件结构，不修改代码
-		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], image_name)))
+		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], image_name + '.jpg')))
 		y_256 = cv2.resize(y, (256, 256), interpolation=cv2.INTER_LINEAR)
-		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", image_name)))
+		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", image_name + '.png')))
 		x_256 = cv2.resize(x, (256, 256), interpolation=cv2.INTER_LINEAR)
 
 		return hwc_to_chw(y_256), hwc_to_chw(x_256), style_id, os.path.join(self.style_dirs[style_id], image_name)
@@ -196,7 +196,7 @@ class Dataset2ValidUnseen(Dataset):
 		for i, group in enumerate([*self.reference_split]):
 			if i == group_id:
 				reference_name = self.reference_split[group]
-				pattern = re.compile(rf'^{group}_\d+\.tif$')
+				# pattern = re.compile(rf'^{group}_\d+\.tif$')
 
 		self.img_names = []
 		self.style_img_names = []
@@ -205,7 +205,7 @@ class Dataset2ValidUnseen(Dataset):
 			for img_name in sorted(os.listdir(style_dir)):
 				if img_name[0] != ".":
 					# 增加判断，img_name 需要满足 group_id 的条件且不是 reference image
-					if pattern.match(img_name) and img_name[:-4] not in reference_name:
+					if img_name[:-4] not in reference_name:
 						self.img_names.append([i, img_name])
 						self.style_img_names[i].append(img_name)
 		self.img_num = len(self.img_names)
@@ -223,7 +223,7 @@ class Dataset2ValidUnseen(Dataset):
 		img_name = self.img_names[idx][1]
 
 		# 在外部修改文件结构，不修改代码
-		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", img_name)))
+		x = normalize(cv2.imread(os.path.join(self.style_dirs[style_id]+"_input", img_name[:-4] + '.png')))
 		y = normalize(cv2.imread(os.path.join(self.style_dirs[style_id], img_name)))
 
 		original_shape = x.shape
@@ -233,7 +233,7 @@ class Dataset2ValidUnseen(Dataset):
 		x = cv2.resize(x, (512, 512), interpolation=cv2.INTER_LINEAR)
 		y = cv2.resize(y, (512, 512), interpolation=cv2.INTER_LINEAR)
 
-		return hwc_to_chw(x), hwc_to_chw(y), hwc_to_chw(x_256), np.identity(self.style_num, dtype=np.float32)[style_id], np.array(original_shape), img_name
+		return hwc_to_chw(x), hwc_to_chw(y), hwc_to_chw(x_256), np.identity(self.style_num, dtype=np.float32)[style_id], np.array(original_shape), img_name, os.path.basename(self.style_dirs[style_id])
 
 
 class Dataset2Train(Dataset):
